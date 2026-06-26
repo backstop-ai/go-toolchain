@@ -10,3 +10,20 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+issues:
+  # Uncap so the finding SET is COMPLETE and deterministic. golangci's defaults
+  # (max-same-issues: 3, max-issues-per-linter: 50) truncate under concurrent
+  # analysis, so the surviving subset drifts run-to-run — fatal for baseline
+  # identity matching. 0 = no limit.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+output:
+  # Deterministic ordering, and report paths relative to the module root (not the
+  # config-file dir) so File identities are stable project-relative paths.
+  sort-order:
+    - file
+    - linter
+    - severity
+  path-prefix: ""
+run:
+  relative-path-mode: gomod
