@@ -1,5 +1,5 @@
 name: backstop/go-toolchain
-version: 1.0.0
+version: 1.1.0
 language: go
 archetype: enforcement
 description: >
@@ -20,6 +20,11 @@ engines:
   # dispatch stays tool/language-blind.
   go-coverage:
     command: go test -coverprofile=cover.out ./...
+    # The Go coverage profile lands in the FILE cover.out (the -coverprofile
+    # target), while go test's stdout is only the test SUMMARY (and failure
+    # lines). Declare that file as the engine's real-output artifact so the
+    # dispatch feeds the PROFILE — not the summary stdout — into the convert.
+    stdout_artifact: cover.out
     input_mode: none
     convert: scripts/coverage-to-records.sh
     scope_kind: project-wide
