@@ -37,4 +37,47 @@ go list -f '{{range .GoFiles}}{{$.ImportPath}}/{{.}}
   [ -n "$gofile" ] && echo "#backstop-gofile $gofile"
 done >> cover.out
 
+# Fold in the CONSUMER PROJECT's coverage exclusions.
+#
+# THE DECLARATION IS THE PROJECT'S, NOT THE PACK'S. An exclusion says "this path
+# cannot be measured HERE, for this reason" — a fact about one codebase. A list
+# shipped in the pack would impose one consumer's exclusions on every consumer of
+# this toolchain, which is the opposite of what a shared pack is for.
+#
+# WHY THE PROFILE IS THE CARRIER: the convert (coverage-to-records.sh) is parse-only
+# and runs SANDBOXED, so it can read neither this file nor anything else in the
+# project. Everything it knows arrives as #backstop-* comment lines this un-sandboxed
+# producer folds in, exactly as the module path and go-file list do above.
+#
+# FORMAT: <repo-relative-path><TAB><justification>. Blank lines and # comments are
+# ignored. The file is TRACKED in the consumer repo on purpose — a gitignored
+# declaration is invisible config that shapes the gate's verdict without appearing in
+# review, which is the rot class ISSUE-097 records.
+#
+# A DECLARATION WITH NO JUSTIFICATION IS DROPPED, NOT HONOURED, AND NOT FATAL. The
+# choice is deliberate and it is the fail-closed one: an unjustified exclusion simply
+# never takes effect, so the path stays measured and the threshold still applies. The
+# rejected alternatives, and why:
+#   - HONOURING IT would let a bare path silently switch coverage off for a file, and
+#     a silent suppression is precisely the vacuous green backstop exists to prevent.
+#   - EXITING NON-ZERO would turn one typo in a declaration file into a total outage
+#     of the coverage dimension, which is a large blast radius for a small mistake.
+# Dropping it degrades to "measured and enforced" — the safe direction — and the
+# author sees a coverage failure rather than a suppression that quietly worked.
+exclusions=".backstop/coverage-exclusions"
+if [ -f "$exclusions" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ''|'#'*) continue ;;
+    esac
+    path=$(printf '%s' "$line" | cut -f1)
+    why=$(printf '%s' "$line" | cut -f2-)
+    if [ -z "$path" ] || [ -z "$why" ] || [ "$why" = "$path" ]; then
+      echo "backstop go-toolchain: dropping coverage exclusion for '${path:-<empty>}' — no justification column (TAB-separated); the path stays measured" >&2
+      continue
+    fi
+    echo "#backstop-coverage-exclude $path $why" >> cover.out
+  done < "$exclusions"
+fi
+
 exit 0

@@ -61,6 +61,20 @@ awk '
   # Producer-provided enrichment: the module path and the package .go file list.
   /^#backstop-module / { module = $2; next }
   /^#backstop-gofile / { gofiles[++gn] = $2; next }
+  # A CONSUMER-declared coverage exclusion, folded in by the un-sandboxed producer:
+  # #backstop-coverage-exclude <repo-relative-path> <justification...>
+  # The path is already repo-relative (the project declared it that way), so it is
+  # NOT prefix-stripped like the module-qualified profile paths are.
+  /^#backstop-coverage-exclude / {
+    excl_path = $2
+    why = ""
+    for (i = 3; i <= NF; i++) why = why (i > 3 ? " " : "") $i
+    if (excl_path != "" && why != "") {
+      excluded[excl_path] = 1
+      reason[excl_path] = why
+    }
+    next
+  }
   /^mode:/ { next }
   NF == 0 { next }
   {
@@ -95,8 +109,14 @@ awk '
     sep = ""
     for (i = 1; i <= n; i++) {
       file = order[i]
-      printf "%s{\"path\":\"%s\",\"covered\":%d,\"total\":%d,\"measured\":true,\"excluded\":false,\"metric\":\"statement\"}", \
-        sep, esc(strip(file)), covered[file] + 0, total[file] + 0
+      rel = strip(file)
+      if (excluded[rel]) {
+        printf "%s{\"path\":\"%s\",\"covered\":%d,\"total\":%d,\"measured\":true,\"excluded\":true,\"metric\":\"statement\",\"justification\":\"%s\"}", \
+          sep, esc(rel), covered[file] + 0, total[file] + 0, esc(reason[rel])
+      } else {
+        printf "%s{\"path\":\"%s\",\"covered\":%d,\"total\":%d,\"measured\":true,\"excluded\":false,\"metric\":\"statement\"}", \
+          sep, esc(rel), covered[file] + 0, total[file] + 0
+      }
       sep = ","
     }
     printf "]\n"
