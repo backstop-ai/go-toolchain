@@ -1,5 +1,5 @@
 name: backstop-ai/go-toolchain
-version: "1.4.0"
+version: "1.5.0"
 language: go
 archetype: enforcement
 description: >
@@ -20,6 +20,12 @@ classification:
   test:
     - "**/*_test.go"
     - "**/testdata/**"
+  # Dependency directory names (ISSUE-122): the Go ecosystem's vendored-dependency
+  # directory. backstop-core excludes it from artifact-corpus walks ONLY because this
+  # pack declares it here — core carries no ecosystem noun of its own, so without this
+  # declaration a Go consumer with a vendor/ tree would have that tree walked.
+  dependency_dirs:
+    - "vendor"
 # Test-name extraction DATA (SPEC-045 REQ-002): the pack-declared regex whose
 # capture group 1 is the Go test name. The language-neutral gate deletes its baked
 # `funcPattern`; a consumer discovers `func Test...` tests ONLY because this block
