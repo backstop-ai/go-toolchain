@@ -1,5 +1,5 @@
 name: backstop-ai/go-toolchain
-version: "1.7.0"
+version: "1.8.0"
 language: go
 archetype: enforcement
 description: >
