@@ -121,18 +121,50 @@ done >> cover.out
 # author sees a coverage failure rather than a suppression that quietly worked.
 exclusions=".backstop/coverage-exclusions"
 if [ -f "$exclusions" ]; then
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      ''|'#'*) continue ;;
-    esac
-    path=$(printf '%s' "$line" | cut -f1)
-    why=$(printf '%s' "$line" | cut -f2-)
-    if [ -z "$path" ] || [ -z "$why" ] || [ "$why" = "$path" ]; then
-      echo "backstop go-toolchain: dropping coverage exclusion for '${path:-<empty>}' — no justification column (TAB-separated); the path stays measured" >&2
-      continue
-    fi
-    echo "#backstop-coverage-exclude $path $why" >> cover.out
-  done < "$exclusions"
+  awk '
+    function has_forbidden(s, path_value,   i, c, code) {
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        for (code = 1; code < 32; code++) {
+          if (c != sprintf("%c", code)) continue
+          if (!path_value && (code == 9 || code == 11 || code == 12 || code == 13)) break
+          return 1
+        }
+      }
+      return 0
+    }
+    function valid_path(path,   count, i, part) {
+      if (path == "" || substr(path, 1, 1) == "/" || substr(path, length(path), 1) == "/" || has_forbidden(path, 1)) return 0
+      count = split(path, parts, "/")
+      for (i = 1; i <= count; i++) {
+        part = parts[i]
+        if (part == "" || part == "." || part == "..") return 0
+      }
+      return 1
+    }
+    function valid_reason(reason,   substantive) {
+      if (reason == "" || has_forbidden(reason, 0)) return 0
+      substantive = reason
+      gsub(/ /, "", substantive)
+      gsub(tab, "", substantive)
+      gsub(cr, "", substantive)
+      gsub(ff, "", substantive)
+      gsub(vt, "", substantive)
+      return substantive != ""
+    }
+    BEGIN { tab = sprintf("%c", 9); vt = sprintf("%c", 11); ff = sprintf("%c", 12); cr = sprintf("%c", 13) }
+    $0 == "" || substr($0, 1, 1) == "#" { next }
+    {
+      delimiter = index($0, tab)
+      path = delimiter ? substr($0, 1, delimiter - 1) : ""
+      reason = delimiter ? substr($0, delimiter + 1) : ""
+      if (!delimiter || !valid_path(path) || !valid_reason(reason)) {
+        printf "backstop go-toolchain: dropping malformed coverage exclusion; the path stays measured\n" > "/dev/stderr"
+        next
+      }
+      printf "#backstop-coverage-exclude\t%s\t%s\n", path, reason
+    }
+  ' "$exclusions" >> cover.out
 fi
 
 exit 0

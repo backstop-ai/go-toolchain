@@ -51,7 +51,50 @@
 echo "go-toolchain coverage-to-records: aggregating per-file statement coverage" >&2
 
 awk '
-  function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return s }
+  function esc(s,   out, i, c) {
+    out = ""
+    for (i = 1; i <= length(s); i++) {
+      c = substr(s, i, 1)
+      if (c == "\\") out = out "\\\\"
+      else if (c == "\"") out = out "\\\""
+      else if (c == tab) out = out "\\t"
+      else if (c == cr) out = out "\\r"
+      else if (c == ff) out = out "\\f"
+      else if (c == vt) out = out "\\u000b"
+      else out = out c
+    }
+    return out
+  }
+  function has_forbidden(s, path_value,   i, c, code) {
+    for (i = 1; i <= length(s); i++) {
+      c = substr(s, i, 1)
+      for (code = 1; code < 32; code++) {
+        if (c != sprintf("%c", code)) continue
+        if (!path_value && (code == 9 || code == 11 || code == 12 || code == 13)) break
+        return 1
+      }
+    }
+    return 0
+  }
+  function valid_path(path,   count, i, part) {
+    if (path == "" || substr(path, 1, 1) == "/" || substr(path, length(path), 1) == "/" || has_forbidden(path, 1)) return 0
+    count = split(path, parts, "/")
+    for (i = 1; i <= count; i++) {
+      part = parts[i]
+      if (part == "" || part == "." || part == "..") return 0
+    }
+    return 1
+  }
+  function valid_reason(reason,   substantive) {
+    if (reason == "" || has_forbidden(reason, 0)) return 0
+    substantive = reason
+    gsub(/ /, "", substantive)
+    gsub(tab, "", substantive)
+    gsub(cr, "", substantive)
+    gsub(ff, "", substantive)
+    gsub(vt, "", substantive)
+    return substantive != ""
+  }
   # pkgdir returns the package import path of a module-qualified file path (everything
   # before the final "/").
   function pkgdir(p,   i) { i = length(p); while (i > 0 && substr(p, i, 1) != "/") i--; return (i > 0) ? substr(p, 1, i - 1) : "" }
@@ -62,18 +105,27 @@ awk '
   /^#backstop-module / { module = $2; next }
   /^#backstop-gofile / { gofiles[++gn] = $2; next }
   # A CONSUMER-declared coverage exclusion, folded in by the un-sandboxed producer:
-  # #backstop-coverage-exclude <repo-relative-path> <justification...>
+  # #backstop-coverage-exclude<TAB><repo-relative-path><TAB><justification...>
   # The path is already repo-relative (the project declared it that way), so it is
   # NOT prefix-stripped like the module-qualified profile paths are.
-  /^#backstop-coverage-exclude / {
-    excl_path = $2
-    why = ""
-    for (i = 3; i <= NF; i++) why = why (i > 3 ? " " : "") $i
-    if (excl_path != "" && why != "") {
+  /^#backstop-coverage-exclude\t/ {
+    remainder = substr($0, length(exclusion_marker) + 1)
+    delimiter = index(remainder, tab)
+    excl_path = delimiter ? substr(remainder, 1, delimiter - 1) : ""
+    why = delimiter ? substr(remainder, delimiter + 1) : ""
+    if (delimiter && valid_path(excl_path) && valid_reason(why)) {
+      if (!(excl_path in excluded)) exclusion_order[++en] = excl_path
       excluded[excl_path] = 1
       reason[excl_path] = why
     }
     next
+  }
+  BEGIN {
+    tab = sprintf("%c", 9)
+    vt = sprintf("%c", 11)
+    ff = sprintf("%c", 12)
+    cr = sprintf("%c", 13)
+    exclusion_marker = "#backstop-coverage-exclude" tab
   }
   /^mode:/ { next }
   NF == 0 { next }
@@ -105,14 +157,27 @@ awk '
         covered[fp] = 0
       }
     }
+    # Existing profile and eligible GoFiles records keep their positions. Only an
+    # accepted declaration still absent from both inventories gets a synthetic record.
+    for (i = 1; i <= n; i++) represented[strip(order[i])] = 1
+    for (i = 1; i <= en; i++) {
+      fp = exclusion_order[i]
+      if (!(fp in represented)) {
+        order[++n] = fp
+        represented[fp] = 1
+        synthetic[fp] = 1
+        total[fp] = 0
+        covered[fp] = 0
+      }
+    }
     printf "["
     sep = ""
     for (i = 1; i <= n; i++) {
       file = order[i]
       rel = strip(file)
       if (excluded[rel]) {
-        printf "%s{\"path\":\"%s\",\"covered\":%d,\"total\":%d,\"measured\":true,\"excluded\":true,\"metric\":\"statement\",\"justification\":\"%s\"}", \
-          sep, esc(rel), covered[file] + 0, total[file] + 0, esc(reason[rel])
+        printf "%s{\"path\":\"%s\",\"covered\":%d,\"total\":%d,\"measured\":%s,\"excluded\":true,\"metric\":\"statement\",\"justification\":\"%s\"}", \
+          sep, esc(rel), covered[file] + 0, total[file] + 0, (file in synthetic) ? "false" : "true", esc(reason[rel])
       } else {
         printf "%s{\"path\":\"%s\",\"covered\":%d,\"total\":%d,\"measured\":true,\"excluded\":false,\"metric\":\"statement\"}", \
           sep, esc(rel), covered[file] + 0, total[file] + 0
