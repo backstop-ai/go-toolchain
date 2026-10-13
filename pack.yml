@@ -1,5 +1,5 @@
 name: backstop-ai/go-toolchain
-version: "1.9.0"
+version: "1.10.0"
 language: go
 archetype: enforcement
 description: >
@@ -44,7 +44,13 @@ engines:
   # granularity). All Go-toolchain coverage knowledge lives in this pack DATA; the
   # dispatch stays tool/language-blind.
   go-coverage:
-    command: go test -coverprofile=cover.out ./...
+    # ISSUE-220: an explicit -timeout on BOTH go test commands. Go's default is 10m
+    # PER PACKAGE, and a large package that outgrows it panics mid-run; the panic is
+    # not parseable as findings, so the engine reports an opaque crash and NO test
+    # result at all. 30m is generous headroom, not a target. Keep this value equal
+    # to go-test's and to the fallback run in scripts/coverage-produce.sh: the
+    # single-run convention reuses one run's profile for both engines.
+    command: go test -timeout=30m -coverprofile=cover.out ./...
     # The UN-SANDBOXED producer (ISSUE-045 option (ii)): the dispatch runs THIS
     # packRoot-resolved script via the runner IN PLACE of the plain command, so its
     # `go test`/`go list` run with full toolchain access and fold the module path +
@@ -113,7 +119,8 @@ engines:
   # reuse. Changing this path without changing go-coverage's stdout_artifact makes the
   # reuse silently dark (the coverage producer simply re-runs the suite).
   go-test:
-    command: go test -coverprofile=cover.out
+    # ISSUE-220: explicit -timeout, same value as go-coverage (see the note there).
+    command: go test -timeout=30m -coverprofile=cover.out
     producer: scripts/test-produce.sh
     input_mode: none
     scope_kind: project-wide

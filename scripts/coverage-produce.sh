@@ -69,8 +69,11 @@ rm -f "$stamp"
 # Run the coverage pass. Tolerate a non-zero exit — a failing suite still yields a
 # usable profile; the convert + gate decide the verdict, never this producer. (A
 # REUSED profile comes from the same failing run, so the behaviour is equivalent.)
+#
+# The explicit -timeout (ISSUE-220) matches the go-test and go-coverage engine commands
+# in pack.yml: without it Go's 10m per-package default kills a large package mid-run.
 if [ "$reuse" -eq 0 ]; then
-  go test -coverprofile=cover.out ./... >/dev/null 2>&1 || true
+  go test -timeout=30m -coverprofile=cover.out ./... >/dev/null 2>&1 || true
 fi
 
 # Nothing to enrich if the profile was not produced at all.

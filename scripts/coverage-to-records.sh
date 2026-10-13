@@ -158,11 +158,16 @@ awk '
       }
     }
     # Existing profile and eligible GoFiles records keep their positions. Only an
-    # accepted declaration still absent from both inventories gets a synthetic record.
+    # accepted declaration still absent from both inventories gets a synthetic record,
+    # and only for a .go path (mirrors classification.source in pack.yml). The
+    # exclusions file is shared with every other toolchain pack in the repository, so
+    # a declared .ts path is for the TypeScript pack to answer: a synthetic record here
+    # would collide with its real record for the same (path, metric) as
+    # coverage_metric_collision. A non-.go declaration is skipped silently.
     for (i = 1; i <= n; i++) represented[strip(order[i])] = 1
     for (i = 1; i <= en; i++) {
       fp = exclusion_order[i]
-      if (!(fp in represented)) {
+      if (!(fp in represented) && fp ~ /\.go$/) {
         order[++n] = fp
         represented[fp] = 1
         synthetic[fp] = 1
